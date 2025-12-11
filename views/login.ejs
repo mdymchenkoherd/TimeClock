@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Login</title>
+  <style>
+    form {
+      width: 300px;
+      margin: 100px auto;
+      padding: 20px;
+      border: 1px solid #ccc;
+      text-align: center;
+    }
+    input {
+      width: 90%;
+      padding: 8px;
+      margin: 10px 0;
+    }
+    .error {
+      color: red;
+    }
+  </style>
+</head>
+<body>
+  <form method="POST" action="/login">
+    <h2>Login</h2>
+    
+    <% if (error) { %>
+      <p class="error"><%= error %></p>
+    <% } %>
+
+    <input type="text" name="username" placeholder="Username" required>
+    <input type="password" name="password" placeholder="Password" required>
+
+    <button type="submit">Login</button>
+  </form>
+</body>
+</html>

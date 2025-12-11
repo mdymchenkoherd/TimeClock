@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Edit Timecards</title>
+  <style>
+    table { width: 80%; margin: 20px auto; border-collapse: collapse; }
+    th, td { padding: 10px; border: 1px solid #ccc; text-align: center; }
+    input[type="datetime-local"], input[type="date"], input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    button { padding: 5px 10px; }
+    form.filter-form { text-align: center; margin-bottom: 20px; }
+    .top-bar {
+      width: 80%;
+      margin: 20px auto;
+      text-align: center;
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+    }
+    .top-bar a {
+      margin: 0 10px;
+      text-decoration: none;
+      color: #007bff;
+    }
+    .top-bar a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="top-bar">
+    Welcome, <strong><%= user.username %></strong>
+    <% if (user.role === 'admin') { %>
+      | <a href="/history">View Login History</a>
+    <% } %>
+    | <a href="/logout">Logout</a>
+  </div>
+
+  <!-- Filter Form -->
+  <form method="GET" class="filter-form">
+    <label>
+      Date:
+      <input type="date" name="date" value="<%= filterDate %>">
+    </label>
+    &nbsp;
+    <label>
+      Employee:
+      <input type="text" name="name" placeholder="Search name" value="<%= name || '' %>">
+    </label>
+    &nbsp;
+    <button type="submit">Apply Filter</button>
+  </form>
+
+  <!-- Timecard Table -->
+  <table>
+    <thead>
+      <tr>
+        <th>Employee</th>
+        <th>Start Time</th>
+        <th>End Time</th>
+        <th>Update</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% timecards.forEach(tc => { %>
+        <tr>
+          <form method="POST" action="/update/<%= tc.lmpTimecardID %>">
+            <td><%= tc.lmeEmployeeName %></td>
+            <td>
+              <input type="datetime-local" name="startTime" 
+                     value="<%= new Date(tc.lmpActualStartTime).toISOString().slice(0,16) %>" required>
+            </td>
+            <td>
+              <input type="datetime-local" name="endTime"
+                     value="<%= tc.lmpActualEndTime ? new Date(tc.lmpActualEndTime).toISOString().slice(0,16) : '' %>">
+            </td>
+            <td><button type="submit">Save</button></td>
+          </form>
+        </tr>
+      <% }); %>
+    </tbody>
+  </table>
+</body>
+</html>

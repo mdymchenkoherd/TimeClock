@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Login History</title>
+  <style>
+    table { width: 90%; margin: 20px auto; border-collapse: collapse; }
+    th, td { padding: 10px; border: 1px solid #ccc; text-align: center; }
+    h2 { text-align: center; }
+  </style>
+</head>
+<body>
+  <h2>Login History</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Username</th>
+        <th>Status</th>
+        <th>Reason</th>
+        <th>Time</th>
+        <th>IP Address</th>
+        <th>User Agent</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% history.forEach(entry => { %>
+        <tr>
+          <td><%= entry.username %></td>
+          <td><%= entry.status %></td>
+          <td><%= entry.reason || '-' %></td>
+          <td><%= new Date(entry.loginTime).toLocaleString() %></td>
+          <td><%= entry.ipAddress %></td>
+          <td><%= entry.userAgent %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</body>
+</html>
