@@ -1,26 +1,34 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const sql = require('mssql/msnodesqlv8');
+const sql = require('mssql');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
 
 const app = express();
-const PORT = 3000;
+const PORT = 4142;
 
 // SQL Server config
 const dbConfig = {
+  user: 'sa',
+  password: 'Neglector-Reunite7-Kisser',
   server: 'HNA-INT02',
   database: 'M1_HN',
-  driver: 'msnodesqlv8',
+  driver: 'mssql',
   options: {
-    trustedConnection: true
+    encrypt: false,
+    trustServerCertificate: true
   }
 };
 
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.static('public'));
+
+// ✅ Accept JSON bodies for API routes
+app.use(express.json());
+
+// (Your existing form parsing)
 app.use(bodyParser.urlencoded({ extended: false }));
 
 // Session setup
@@ -32,9 +40,7 @@ app.use(session({
 
 // 🔐 Middleware: Check login
 function requireLogin(req, res, next) {
-  if (!req.session.user) {
-    return res.redirect('/login');
-  }
+  if (!req.session.user) return res.redirect('/login');
   next();
 }
 
@@ -90,13 +96,13 @@ async function initializeDatabase() {
       END
     `);
 
-    // Insert default users if not exists
+    // Insert default users ONLY if table empty (your original behavior)
     const result = await request.query(`SELECT COUNT(*) as count FROM Users`);
     if (result.recordset[0].count === 0) {
       const hash1 = await bcrypt.hash('Admin123!', 10);
       const hash2 = await bcrypt.hash('User123!', 10);
 
-      await pool.request().batch(`
+      await pool.request().query(`
         INSERT INTO Users (username, passwordHash, role)
         VALUES 
         ('admin', '${hash1}', 'admin'),
@@ -159,9 +165,7 @@ app.post('/login', async (req, res) => {
 });
 
 app.get('/logout', (req, res) => {
-  req.session.destroy(() => {
-    res.redirect('/login');
-  });
+  req.session.destroy(() => res.redirect('/login'));
 });
 
 // Log login attempt
@@ -179,6 +183,59 @@ async function logLoginAttempt(userID, username, status, reason, ip, userAgent) 
       VALUES (@userID, @username, @status, @reason, @ipAddress, @userAgent)
     `);
 }
+
+// ✅ NEW: Admin API route to add users
+// POST /api/users
+// JSON body: { "username": "alice", "password": "Secret123!", "role": "user" }
+app.post('/api/users', requireLogin, requireAdmin, async (req, res) => {
+  try {
+    let { username, password, role } = req.body;
+
+    username = (username || '').trim();
+    password = (password || '').trim();
+    role = (role || 'user').trim();
+
+    if (!username || !password) {
+      return res.status(400).json({ error: 'username and password are required' });
+    }
+
+    if (!['user', 'admin'].includes(role)) {
+      return res.status(400).json({ error: 'role must be "user" or "admin"' });
+    }
+
+    const pool = await sql.connect(dbConfig);
+
+    // Check if username exists
+    const existing = await pool.request()
+      .input('username', sql.NVarChar, username)
+      .query('SELECT userID FROM Users WHERE username = @username');
+
+    if (existing.recordset.length > 0) {
+      return res.status(409).json({ error: 'username already exists' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Insert new user
+    const insertResult = await pool.request()
+      .input('username', sql.NVarChar, username)
+      .input('passwordHash', sql.NVarChar, passwordHash)
+      .input('role', sql.NVarChar, role)
+      .query(`
+        INSERT INTO Users (username, passwordHash, role)
+        OUTPUT INSERTED.userID, INSERTED.username, INSERTED.role, INSERTED.createdAt
+        VALUES (@username, @passwordHash, @role)
+      `);
+
+    return res.status(201).json({ user: insertResult.recordset[0] });
+  } catch (err) {
+    // If unique constraint triggers anyway (race condition), return 409
+    if (String(err.message || '').toLowerCase().includes('unique')) {
+      return res.status(409).json({ error: 'username already exists' });
+    }
+    return res.status(500).json({ error: 'server error', details: err.message });
+  }
+});
 
 // 🧾 View login history (admin only)
 app.get('/history', requireLogin, requireAdmin, async (req, res) => {
