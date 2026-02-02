@@ -3,15 +3,35 @@
 <head>
   <meta charset="UTF-8">
   <title>Edit Timecards</title>
+
+  <!-- DatePicker (Flatpickr) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
   <style>
-    table { width: 80%; margin: 20px auto; border-collapse: collapse; }
-    th, td { padding: 10px; border: 1px solid #ccc; text-align: center; }
-    input[type="datetime-local"], input[type="date"], input[type="text"] {
+    table {
+      width: 80%;
+      margin: 20px auto;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #ccc;
+      text-align: center;
+    }
+    input[type="text"],
+    input[type="datetime-local"] {
       width: 100%;
       box-sizing: border-box;
     }
-    button { padding: 5px 10px; }
-    form.filter-form { text-align: center; margin-bottom: 20px; }
+    button {
+      padding: 6px 12px;
+      cursor: pointer;
+    }
+    form.filter-form {
+      text-align: center;
+      margin-bottom: 20px;
+    }
     .top-bar {
       width: 80%;
       margin: 20px auto;
@@ -31,6 +51,7 @@
 </head>
 <body>
 
+  <!-- Top Bar -->
   <div class="top-bar">
     Welcome, <strong><%= user.username %></strong>
     <% if (user.role === 'admin') { %>
@@ -43,17 +64,34 @@
   <form method="GET" class="filter-form">
     <label>
       From:
-      <input type="date" name="from" value="<%= filterFrom %>">
+      <input
+        type="text"
+        id="fromDate"
+        name="from"
+        value="<%= filterFrom %>"
+        autocomplete="off"
+      >
     </label>
     &nbsp;
     <label>
       To:
-      <input type="date" name="to" value="<%= filterTo %>">
+      <input
+        type="text"
+        id="toDate"
+        name="to"
+        value="<%= filterTo %>"
+        autocomplete="off"
+      >
     </label>
     &nbsp;
     <label>
       Employee:
-      <input type="text" name="name" placeholder="Search name" value="<%= name || '' %>">
+      <input
+        type="text"
+        name="name"
+        placeholder="Search name"
+        value="<%= name || '' %>"
+      >
     </label>
     &nbsp;
 
@@ -61,7 +99,7 @@
     <button type="submit" formaction="/export">Export</button>
   </form>
 
-  <!-- Timecard Table -->
+  <!-- Timecards Table -->
   <table>
     <thead>
       <tr>
@@ -77,18 +115,41 @@
           <form method="POST" action="/update/<%= tc.lmpTimecardID %>">
             <td><%= tc.lmeEmployeeName %></td>
             <td>
-              <input type="datetime-local" name="startTime"
-                     value="<%= new Date(tc.lmpActualStartTime).toISOString().slice(0,16) %>" required>
+              <input
+                type="datetime-local"
+                name="startTime"
+                value="<%= new Date(tc.lmpActualStartTime).toISOString().slice(0,16) %>"
+                required
+              >
             </td>
             <td>
-              <input type="datetime-local" name="endTime"
-                     value="<%= tc.lmpActualEndTime ? new Date(tc.lmpActualEndTime).toISOString().slice(0,16) : '' %>">
+              <input
+                type="datetime-local"
+                name="endTime"
+                value="<%= tc.lmpActualEndTime ? new Date(tc.lmpActualEndTime).toISOString().slice(0,16) : '' %>"
+              >
             </td>
-            <td><button type="submit">Save</button></td>
+            <td>
+              <button type="submit">Save</button>
+            </td>
           </form>
         </tr>
       <% }); %>
     </tbody>
   </table>
+
+  <!-- DatePicker Init -->
+  <script>
+    flatpickr("#fromDate", {
+      dateFormat: "Y-m-d",
+      allowInput: true
+    });
+
+    flatpickr("#toDate", {
+      dateFormat: "Y-m-d",
+      allowInput: true
+    });
+  </script>
+
 </body>
 </html>
