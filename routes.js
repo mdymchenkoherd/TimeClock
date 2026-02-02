@@ -14,6 +14,16 @@ function toLocalDateTime(input) {
   return new Date(isoString);
 }
 
+function hoursBetween(start, end) {
+  if (!start || !end) return null;
+  const s = new Date(start);
+  const e = new Date(end);
+  if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return null;
+  const diffMs = e.getTime() - s.getTime();
+  if (diffMs < 0) return null;
+  return Math.round((diffMs / 3600000) * 100) / 100; // 2 decimals
+}
+
 async function logLoginAttempt(userID, username, status, reason, ip, userAgent) {
   const pool = await getPool();
   await pool.request()
@@ -133,7 +143,7 @@ router.post('/api/users', requireLogin, requireAdmin, async (req, res) => {
         VALUES (@username, @passwordHash, @role)
       `);
 
-    return res.status, res.status(201).json({ user: insertResult.recordset[0] });
+    return res.status(201).json({ user: insertResult.recordset[0] });
   } catch (err) {
     return res.status(500).json({ error: 'server error', details: err.message });
   }
@@ -181,7 +191,6 @@ router.get('/history', requireLogin, requireAdmin, async (req, res) => {
 router.get('/', requireLogin, async (req, res) => {
   const { date, from, to, name } = req.query;
 
-  // Backwards compatible: if old "date" query is used, treat it as from=to=date
   const today = new Date().toISOString().split('T')[0];
   const filterFrom = (from || date || today);
   const filterTo = (to || date || today);
@@ -248,31 +257,95 @@ router.get('/export', requireLogin, async (req, res) => {
         ORDER BY empl.lmeEmployeeName ASC, tc.lmpActualStartTime ASC
       `);
 
+    // totals map stays (we keep your current version)
+    const totalsByEmployee = new Map(); // name -> totalHours
+
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'TimeClock';
     workbook.created = new Date();
 
+    // Sheet 1: detailed rows + inline totals
     const sheet = workbook.addWorksheet('Timecards');
     sheet.columns = [
       { header: 'Employee', key: 'employee', width: 35 },
       { header: 'Clock In', key: 'clockIn', width: 22 },
       { header: 'Clock Out', key: 'clockOut', width: 22 },
+      { header: 'Hours', key: 'hours', width: 10 },
     ];
-
     sheet.getRow(1).font = { bold: true };
     sheet.views = [{ state: 'frozen', ySplit: 1 }];
 
+    // We will write rows grouped by employee, then insert a "Total for:" line.
+    let currentEmployee = null;
+    let runningTotal = 0;
+
+    const flushTotalRow = () => {
+      if (!currentEmployee) return;
+
+      // blank spacer row (optional; comment out if you don’t want spacing)
+      // sheet.addRow({ employee: '', clockIn: null, clockOut: null, hours: null });
+
+      const totalRow = sheet.addRow({
+        employee: `Total for: ${currentEmployee}`,
+        clockIn: null,
+        clockOut: null,
+        hours: Math.round(runningTotal * 100) / 100
+      });
+
+      totalRow.font = { bold: true };
+    };
+
     for (const r of result.recordset) {
+      const employee = r.lmeEmployeeName;
+
+      // When employee changes -> write total row for previous employee
+      if (currentEmployee !== null && employee !== currentEmployee) {
+        flushTotalRow();
+        runningTotal = 0;
+      }
+
+      currentEmployee = employee;
+
+      const h = hoursBetween(r.lmpActualStartTime, r.lmpActualEndTime);
+
       sheet.addRow({
-        employee: r.lmeEmployeeName,
+        employee,
         clockIn: r.lmpActualStartTime ? new Date(r.lmpActualStartTime) : null,
         clockOut: r.lmpActualEndTime ? new Date(r.lmpActualEndTime) : null,
+        hours: h
       });
+
+      if (h != null) {
+        runningTotal += h;
+
+        const prev = totalsByEmployee.get(employee) || 0;
+        totalsByEmployee.set(employee, Math.round((prev + h) * 100) / 100);
+      }
     }
 
-    // Excel date format
+    // Flush last employee total
+    flushTotalRow();
+
     sheet.getColumn('clockIn').numFmt = 'yyyy-mm-dd hh:mm';
     sheet.getColumn('clockOut').numFmt = 'yyyy-mm-dd hh:mm';
+    sheet.getColumn('hours').numFmt = '0.00';
+
+    // Sheet 2: totals per employee (kept as-is)
+    const totalsSheet = workbook.addWorksheet('Totals');
+    totalsSheet.columns = [
+      { header: 'Employee', key: 'employee', width: 35 },
+      { header: 'Total Hours', key: 'totalHours', width: 14 },
+    ];
+    totalsSheet.getRow(1).font = { bold: true };
+    totalsSheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+    const sorted = Array.from(totalsByEmployee.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]));
+
+    for (const [employee, totalHours] of sorted) {
+      totalsSheet.addRow({ employee, totalHours });
+    }
+    totalsSheet.getColumn('totalHours').numFmt = '0.00';
 
     const safeFrom = String(filterFrom).replace(/[^0-9-]/g, '');
     const safeTo = String(filterTo).replace(/[^0-9-]/g, '');
