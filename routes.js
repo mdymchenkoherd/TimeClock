@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcrypt');
 const { sql, getPool } = require('./db');
 const { requireLogin, requireAdmin } = require('./auth');
+const ExcelJS = require('exceljs');
 
 const router = express.Router();
 
@@ -132,7 +133,7 @@ router.post('/api/users', requireLogin, requireAdmin, async (req, res) => {
         VALUES (@username, @passwordHash, @role)
       `);
 
-    return res.status(201).json({ user: insertResult.recordset[0] });
+    return res.status, res.status(201).json({ user: insertResult.recordset[0] });
   } catch (err) {
     return res.status(500).json({ error: 'server error', details: err.message });
   }
@@ -176,40 +177,114 @@ router.get('/history', requireLogin, requireAdmin, async (req, res) => {
   res.render('history', { history: result.recordset });
 });
 
-// ---- Timecards list page (protected) ----
+// ---- Timecards list page (protected): From/To filter ----
 router.get('/', requireLogin, async (req, res) => {
-  const { date, name } = req.query;
+  const { date, from, to, name } = req.query;
 
-  const filterDate = date || new Date().toISOString().split('T')[0];
+  // Backwards compatible: if old "date" query is used, treat it as from=to=date
+  const today = new Date().toISOString().split('T')[0];
+  const filterFrom = (from || date || today);
+  const filterTo = (to || date || today);
+
   const nameFilter = name ? `%${name}%` : '%';
 
   try {
     const pool = await getPool();
-    const request = pool.request()
-      .input('filterDate', sql.Date, filterDate)
-      .input('name', sql.NVarChar, nameFilter);
-
-    const result = await request.query(`
-      SELECT 
-        tc.lmpTimecardID,
-        empl.lmeEmployeeName, 
-        tc.lmpActualStartTime, 
-        tc.lmpActualEndTime
-      FROM Timecards tc
-      INNER JOIN Employees empl ON tc.lmpEmployeeID = empl.lmeEmployeeID
-      WHERE CAST(tc.lmpActualStartTime as date) = @filterDate
-        AND empl.lmeEmployeeName LIKE @name
-      ORDER BY tc.lmpActualStartTime DESC
-    `);
+    const result = await pool.request()
+      .input('fromDate', sql.Date, filterFrom)
+      .input('toDate', sql.Date, filterTo)
+      .input('name', sql.NVarChar, nameFilter)
+      .query(`
+        SELECT 
+          tc.lmpTimecardID,
+          empl.lmeEmployeeName, 
+          tc.lmpActualStartTime, 
+          tc.lmpActualEndTime
+        FROM Timecards tc
+        INNER JOIN Employees empl ON tc.lmpEmployeeID = empl.lmeEmployeeID
+        WHERE CAST(tc.lmpActualStartTime as date) >= @fromDate
+          AND CAST(tc.lmpActualStartTime as date) <= @toDate
+          AND empl.lmeEmployeeName LIKE @name
+        ORDER BY tc.lmpActualStartTime DESC
+      `);
 
     res.render('index', {
       timecards: result.recordset,
-      filterDate,
+      filterFrom,
+      filterTo,
       name,
       user: req.session.user
     });
   } catch (err) {
     res.status(500).send('Database Error: ' + err.message);
+  }
+});
+
+// ---- Export timecards to Excel (protected) ----
+router.get('/export', requireLogin, async (req, res) => {
+  const { date, from, to, name } = req.query;
+
+  const today = new Date().toISOString().split('T')[0];
+  const filterFrom = (from || date || today);
+  const filterTo = (to || date || today);
+  const nameFilter = name ? `%${name}%` : '%';
+
+  try {
+    const pool = await getPool();
+    const result = await pool.request()
+      .input('fromDate', sql.Date, filterFrom)
+      .input('toDate', sql.Date, filterTo)
+      .input('name', sql.NVarChar, nameFilter)
+      .query(`
+        SELECT 
+          empl.lmeEmployeeName, 
+          tc.lmpActualStartTime, 
+          tc.lmpActualEndTime
+        FROM Timecards tc
+        INNER JOIN Employees empl ON tc.lmpEmployeeID = empl.lmeEmployeeID
+        WHERE CAST(tc.lmpActualStartTime as date) >= @fromDate
+          AND CAST(tc.lmpActualStartTime as date) <= @toDate
+          AND empl.lmeEmployeeName LIKE @name
+        ORDER BY empl.lmeEmployeeName ASC, tc.lmpActualStartTime ASC
+      `);
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'TimeClock';
+    workbook.created = new Date();
+
+    const sheet = workbook.addWorksheet('Timecards');
+    sheet.columns = [
+      { header: 'Employee', key: 'employee', width: 35 },
+      { header: 'Clock In', key: 'clockIn', width: 22 },
+      { header: 'Clock Out', key: 'clockOut', width: 22 },
+    ];
+
+    sheet.getRow(1).font = { bold: true };
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+
+    for (const r of result.recordset) {
+      sheet.addRow({
+        employee: r.lmeEmployeeName,
+        clockIn: r.lmpActualStartTime ? new Date(r.lmpActualStartTime) : null,
+        clockOut: r.lmpActualEndTime ? new Date(r.lmpActualEndTime) : null,
+      });
+    }
+
+    // Excel date format
+    sheet.getColumn('clockIn').numFmt = 'yyyy-mm-dd hh:mm';
+    sheet.getColumn('clockOut').numFmt = 'yyyy-mm-dd hh:mm';
+
+    const safeFrom = String(filterFrom).replace(/[^0-9-]/g, '');
+    const safeTo = String(filterTo).replace(/[^0-9-]/g, '');
+    const filename = `timecards_${safeFrom}_to_${safeTo}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    res.send(Buffer.from(buffer));
+  } catch (err) {
+    res.status(500).send('Export Error: ' + err.message);
   }
 });
 

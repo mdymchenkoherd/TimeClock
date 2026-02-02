@@ -42,8 +42,13 @@
   <!-- Filter Form -->
   <form method="GET" class="filter-form">
     <label>
-      Date:
-      <input type="date" name="date" value="<%= filterDate %>">
+      From:
+      <input type="date" name="from" value="<%= filterFrom %>">
+    </label>
+    &nbsp;
+    <label>
+      To:
+      <input type="date" name="to" value="<%= filterTo %>">
     </label>
     &nbsp;
     <label>
@@ -51,7 +56,9 @@
       <input type="text" name="name" placeholder="Search name" value="<%= name || '' %>">
     </label>
     &nbsp;
+
     <button type="submit">Apply Filter</button>
+    <button type="submit" formaction="/export">Export</button>
   </form>
 
   <!-- Timecard Table -->
@@ -70,7 +77,7 @@
           <form method="POST" action="/update/<%= tc.lmpTimecardID %>">
             <td><%= tc.lmeEmployeeName %></td>
             <td>
-              <input type="datetime-local" name="startTime" 
+              <input type="datetime-local" name="startTime"
                      value="<%= new Date(tc.lmpActualStartTime).toISOString().slice(0,16) %>" required>
             </td>
             <td>
